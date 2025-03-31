@@ -11,7 +11,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
  */
 export async function sendMessage(message: string) {
   try {
-    const response = await fetch(`${API_URL}/chat/message`, {
+    const response = await fetch(`${API_URL}/api/chat/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -21,7 +21,8 @@ export async function sendMessage(message: string) {
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(errorData.error || `API error: ${response.status}`);
     }
 
     return await response.json();
@@ -37,7 +38,7 @@ export async function sendMessage(message: string) {
  */
 export async function getChatHistory() {
   try {
-    const response = await fetch(`${API_URL}/chat/history`, {
+    const response = await fetch(`${API_URL}/api/chat/history`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -46,13 +47,20 @@ export async function getChatHistory() {
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      // If the user is not authenticated, return empty history instead of error
+      if (response.status === 401) {
+        return { history: [] };
+      }
+
+      const errorData = await response.json();
+      throw new Error(errorData.error || `API error: ${response.status}`);
     }
 
     return await response.json();
   } catch (error) {
     console.error("Error fetching chat history:", error);
-    throw error;
+    // Return empty history on error to prevent app from crashing
+    return { history: [] };
   }
 }
 
@@ -63,7 +71,7 @@ export async function getChatHistory() {
  */
 export async function deleteMessage(messageId: number) {
   try {
-    const response = await fetch(`${API_URL}/chat/message/${messageId}`, {
+    const response = await fetch(`${API_URL}/api/chat/message/${messageId}`, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
@@ -72,7 +80,8 @@ export async function deleteMessage(messageId: number) {
     });
 
     if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+      const errorData = await response.json();
+      throw new Error(errorData.error || `API error: ${response.status}`);
     }
 
     return await response.json();

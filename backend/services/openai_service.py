@@ -12,8 +12,9 @@ def get_openai_response(user_message):
     Returns:
         str: The response from OpenAI
     """
-    # Set OpenAI API key
-    openai.api_key = current_app.config['OPENAI_API_KEY']
+    # Set OpenAI API key from environment variables if not already set
+    if not openai.api_key:
+        openai.api_key = os.getenv('OPENAI_API_KEY') or current_app.config.get('OPENAI_API_KEY')
     
     if not openai.api_key:
         raise ValueError("OpenAI API key is not set. Please set the OPENAI_API_KEY environment variable.")
@@ -22,9 +23,7 @@ def get_openai_response(user_message):
         # Create a system message to guide the model's behavior
         system_message = {
             "role": "system",
-            "content": "You are a helpful medical assistant. Provide accurate, evidence-based medical information. "
-                       "Always clarify that you're not a doctor and recommend consulting healthcare professionals "
-                       "for personalized medical advice, diagnosis, or treatment."
+            "content": "You are a helpful assistant. Provide concise and accurate information."
         }
         
         # Create a user message
@@ -32,11 +31,10 @@ def get_openai_response(user_message):
         
         # Get response from OpenAI
         response = openai.ChatCompletion.create(
-            model=current_app.config.get('OPENAI_MODEL', 'gpt-3.5-turbo'),
+            model=os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo'),
             messages=[system_message, user_prompt],
             max_tokens=500,
-            temperature=0.7,
-            top_p=0.9
+            temperature=0.7
         )
         
         # Extract and return the response text
