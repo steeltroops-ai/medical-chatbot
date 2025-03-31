@@ -22,6 +22,11 @@ def create_app():
     # Configure app
     app.config.from_object('config.Config')
     
+    # Add root route
+    @app.route('/')
+    def index():
+        return jsonify({"message": "Medical Chatbot API"}), 200
+    
     # Initialize extensions
     db.init_app(app)
     login_manager.init_app(app)
@@ -31,7 +36,15 @@ def create_app():
     openai.api_key = app.config['OPENAI_API_KEY']
     
     # Enable CORS
-    CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+    CORS(app,
+         resources={
+             r"/api/*": {
+                 "origins": ["http://localhost:3000"],
+                 "expose_headers": ["Content-Type", "Authorization"]
+             }
+         },
+         supports_credentials=True
+    )
     
     # Import and register blueprints
     from routes.auth import auth_bp

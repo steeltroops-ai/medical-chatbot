@@ -1,16 +1,29 @@
 "use client";
 
 import { ChatMessage } from "@/types/chat";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useChat } from "@/context/ChatContext";
 
 interface MessageProps {
   message: ChatMessage;
+  isLastMessage?: boolean;
 }
 
-export default function Message({ message }: MessageProps) {
+export default function Message({
+  message,
+  isLastMessage = false,
+}: MessageProps) {
   const { removeMessage } = useChat();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Animate in when mounted
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleDelete = async () => {
     try {
@@ -32,14 +45,16 @@ export default function Message({ message }: MessageProps) {
     <div
       className={`flex w-full ${
         message.is_bot ? "justify-start" : "justify-end"
-      } mb-4 group`}
+      } group transition-opacity duration-300 ease-in-out ${
+        isVisible ? "opacity-100" : "opacity-0"
+      } ${isLastMessage ? "animate-slide-up" : ""}`}
     >
       {message.is_bot && (
-        <div className="flex-shrink-0 mr-3">
-          <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white">
+        <div className="flex-shrink-0 mr-3 self-start mt-2">
+          <div className="w-10 h-10 rounded-xl primary-gradient flex items-center justify-center text-white shadow-md">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
+              className="h-6 w-6"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -55,18 +70,27 @@ export default function Message({ message }: MessageProps) {
         </div>
       )}
       <div
-        className={`max-w-[80%] rounded-lg p-4 shadow-sm ${
+        className={`max-w-[85%] rounded-2xl p-4 ${
           message.is_bot
-            ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700"
-            : "bg-blue-600 text-white"
-        }`}
+            ? "bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-100 dark:border-gray-700 shadow-md"
+            : "primary-gradient text-white shadow-md"
+        } ${message.is_bot ? "rounded-tl-sm" : "rounded-tr-sm"}`}
       >
         <div className="flex flex-col">
-          <div className="flex justify-between items-start mb-1">
-            <span className="font-semibold">
-              {message.is_bot ? "Medical Assistant" : "You"}
+          <div className="flex justify-between items-center mb-2">
+            <span className="font-semibold text-sm flex items-center">
+              {message.is_bot ? (
+                <>
+                  <span>Medical Assistant</span>
+                  <span className="ml-2 px-1.5 py-0.5 text-xs bg-teal-100 dark:bg-teal-900 text-teal-700 dark:text-teal-300 rounded">
+                    AI
+                  </span>
+                </>
+              ) : (
+                "You"
+              )}
             </span>
-            <div className="flex items-center ml-2">
+            <div className="flex items-center ml-4">
               <span className="text-xs opacity-70">{formattedTime}</span>
               {!message.is_bot && (
                 <button
@@ -78,23 +102,42 @@ export default function Message({ message }: MessageProps) {
                   {isDeleting ? (
                     <span className="animate-pulse">...</span>
                   ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-4 w-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
                     </svg>
                   )}
                 </button>
               )}
             </div>
           </div>
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <div
+            className={`whitespace-pre-wrap text-sm md:text-base ${
+              message.is_bot
+                ? "prose dark:prose-invert max-w-none prose-sm md:prose-base"
+                : ""
+            }`}
+          >
+            {message.content}
+          </div>
         </div>
       </div>
       {!message.is_bot && (
-        <div className="flex-shrink-0 ml-3">
-          <div className="w-8 h-8 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center text-gray-700 dark:text-gray-300">
+        <div className="flex-shrink-0 ml-3 self-start mt-2">
+          <div className="w-10 h-10 rounded-xl teal-gradient flex items-center justify-center text-white shadow-md">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
+              className="h-6 w-6"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"

@@ -20,41 +20,81 @@ def send_message():
     
     # Get response from OpenAI
     try:
-        # Check if user is authenticated, if not, don't save to database
+        # Get response from OpenAI first to avoid saving failed messages
+        bot_response = get_openai_response(data['message'])
+        
+        # Define error phrases that indicate different types of errors
+        service_errors = [
+            "service configuration error",
+            "service authentication error",
+            "contact support"
+        ]
+        temporary_errors = [
+            "high demand",
+            "temporarily unavailable",
+            "try again in a few moments",
+            "try again in a minute"
+        ]
+        
+        # Check for different types of error responses
+        response_lower = bot_response.lower()
+        if any(error in response_lower for error in service_errors):
+            return jsonify({
+                'error': bot_response,
+                'error_type': 'service_error'
+            }), 500
+        elif any(error in response_lower for error in temporary_errors):
+            return jsonify({
+                'error': bot_response,
+                'error_type': 'temporary_error'
+            }), 503
+
+        # Process authenticated users
         if hasattr(current_user, 'is_authenticated') and current_user.is_authenticated:
-            # Save user message to database
-            user_message = ChatMessage(
-                user_id=current_user.id,
-                content=data['message'],
-                is_bot=False
-            )
-            db.session.add(user_message)
-            db.session.commit()
-            
-            # Get response from OpenAI
-            bot_response = get_openai_response(data['message'])
-            
-            # Save bot response to database
-            bot_message = ChatMessage(
-                user_id=current_user.id,
-                content=bot_response,
-                is_bot=True
-            )
-            db.session.add(bot_message)
-            db.session.commit()
-            
-            return jsonify({
-                'message': bot_response,
-                'message_id': bot_message.id
-            }), 200
+            try:
+                try:
+                    # Save user message to database
+                    user_message = ChatMessage(
+                        user_id=current_user.id,
+                        content=data['message'],
+                        is_bot=False
+                    )
+                    db.session.add(user_message)
+                    db.session.flush()  # Get user message ID
+
+                    # Save bot message to database
+                    bot_message = ChatMessage(
+                        user_id=current_user.id,
+                        content=bot_response,
+                        is_bot=True
+                    )
+                    db.session.add(bot_message)
+                    db.session.commit()  # Commit both messages
+
+                    return jsonify({
+                        'message': bot_response,
+                        'message_id': bot_message.id
+                    }), 200
+                except Exception as e:
+                    db.session.rollback()
+                    return jsonify({
+                        'error': 'Failed to save messages to database',
+                        'message': bot_response,
+                        'message_id': 0
+                    }), 500
+            except Exception as db_error:
+                db.session.rollback()
+                print(f"Database error: {str(db_error)}")
+                # Still return the response even if saving to DB failed
+                return jsonify({
+                    'message': bot_response,
+                    'message_id': 0
+                }), 200
         else:
-            # Get response from OpenAI without saving to database
-            bot_response = get_openai_response(data['message'])
-            
-            # Return response without database entry
+            # Return response without database entry for unauthenticated users
             return jsonify({
                 'message': bot_response,
-                'message_id': 0  # Dummy ID for unauthenticated sessions
+                'message_id': 0
             }), 200
             
     except Exception as e:

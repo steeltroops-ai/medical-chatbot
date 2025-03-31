@@ -51,7 +51,7 @@ export async function getChatHistory() {
       if (response.status === 401) {
         return { history: [] };
       }
-
+      
       const errorData = await response.json();
       throw new Error(errorData.error || `API error: ${response.status}`);
     }

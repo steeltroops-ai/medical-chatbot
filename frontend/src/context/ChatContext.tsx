@@ -48,9 +48,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
 
-      // Add user message to the chat immediately
+      // Add user message to the chat immediately with a temporary ID
+      const tempId = Date.now();
       const tempUserMessage: ChatMessage = {
-        id: Date.now(), // Temporary ID
+        id: tempId,
         content: message,
         is_bot: false,
         timestamp: new Date().toISOString(),
@@ -58,18 +59,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       setMessages((prev) => [...prev, tempUserMessage]);
 
-      // Send message to API
-      const response = await sendMessage(message);
+      try {
+        // Send message to API
+        const response = await sendMessage(message);
 
-      // Add bot response to the chat
-      const botMessage: ChatMessage = {
-        id: response.message_id,
-        content: response.message,
-        is_bot: true,
-        timestamp: new Date().toISOString(),
-      };
+        // Update messages, replacing the temporary message with the actual one
+        const botMessage: ChatMessage = {
+          id: response.message_id,
+          content: response.message,
+          is_bot: true,
+          timestamp: new Date().toISOString(),
+        };
 
-      setMessages((prev) => [...prev, botMessage]);
+        setMessages((prev) => [
+          ...prev.filter((msg) => msg.id !== tempId),
+          tempUserMessage,
+          botMessage,
+        ]);
+      } catch (err) {
+        // Remove the temporary message if the API call fails
+        setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+        throw err;
+      }
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "An unknown error occurred";
