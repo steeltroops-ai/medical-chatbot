@@ -7,6 +7,8 @@ import {
   useEffect,
   ReactNode,
   useCallback,
+  useMemo,
+  useRef,
 } from "react";
 import { ChatMessage, ErrorResponse, MessageResponse } from "@/types/chat";
 import { getChatHistory, sendMessage, deleteMessage } from "@/services/api";
@@ -24,9 +26,25 @@ interface ChatContextType {
 // Storage key for localStorage
 const STORAGE_KEY = "medical_chatbot_messages";
 
-const ChatContext = createContext<ChatContextType | undefined>(undefined);
+// Create context with a more meaningful default value
+const defaultContextValue: ChatContextType = {
+  messages: [],
+  loading: false,
+  error: null,
+  sendUserMessage: async () => {},
+  removeMessage: async () => {},
+  clearError: () => {},
+  clearAllMessages: () => {},
+};
+
+const ChatContext = createContext<ChatContextType>(defaultContextValue);
 
 export function ChatProvider({ children }: { children: ReactNode }) {
+  // Use refs for values that don't need to trigger re-renders
+  const isInitialLoadRef = useRef(true);
+  const loadingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Main state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,10 +52,43 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
 
-  // Save messages to localStorage whenever they change
+  // Debounced loading state to prevent flashing loading indicators
+  const setLoadingDebounced = useCallback((isLoading: boolean) => {
+    if (isLoading) {
+      loadingTimerRef.current = setTimeout(() => {
+        setLoading(true);
+      }, 200); // Short delay before showing loading state
+    } else {
+      if (loadingTimerRef.current) {
+        clearTimeout(loadingTimerRef.current);
+      }
+      setLoading(false);
+    }
+  }, []);
+
+  // Cleanup loading timer
+  useEffect(() => {
+    return () => {
+      if (loadingTimerRef.current) {
+        clearTimeout(loadingTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Optimized storage of messages to localStorage - only save if data actually changed
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      try {
+        const storedMessages = localStorage.getItem(STORAGE_KEY);
+        const currentMessages = JSON.stringify(messages);
+
+        // Only update localStorage if the messages have changed
+        if (storedMessages !== currentMessages) {
+          localStorage.setItem(STORAGE_KEY, currentMessages);
+        }
+      } catch (err) {
+        console.error("Error saving to localStorage:", err);
+      }
     }
   }, [messages]);
 
@@ -57,51 +108,62 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Load messages from localStorage and then try to fetch from API
+  // Load messages from localStorage and fetch from API only once at startup
   useEffect(() => {
-    // First load from localStorage
-    const loadFromLocalStorage = () => {
+    if (!isInitialLoadRef.current) return;
+
+    const loadData = async () => {
+      // First load from localStorage
       try {
         const storedMessages = localStorage.getItem(STORAGE_KEY);
         if (storedMessages) {
-          setMessages(JSON.parse(storedMessages));
+          const parsedMessages = JSON.parse(storedMessages);
+          setMessages(parsedMessages);
         }
       } catch (err) {
         console.error("Error loading messages from localStorage:", err);
       }
-    };
 
-    // Then try to fetch from API
-    const fetchChatHistory = async () => {
-      if (!isOnline) return;
+      // Then try to fetch from API if online
+      if (isOnline) {
+        try {
+          setLoadingDebounced(true);
+          const data = await getChatHistory();
 
-      try {
-        setLoading(true);
-        const data = await getChatHistory();
-
-        // Only update messages if we got something from the server
-        if (data.history && data.history.length > 0) {
-          setMessages(data.history);
+          // Only update messages if we got something from the server
+          if (data.history && data.history.length > 0) {
+            setMessages((prevMessages) => {
+              // If we have more messages locally than from the server,
+              // prefer the local messages (newer)
+              if (prevMessages.length > data.history.length) {
+                return prevMessages;
+              }
+              return data.history;
+            });
+          }
+        } catch (err) {
+          if (isOnline) {
+            console.error("Error fetching chat history:", err);
+          }
+        } finally {
+          setLoadingDebounced(false);
+          isInitialLoadRef.current = false;
         }
-      } catch (err) {
-        // Don't show error if we're offline, just use localStorage
-        if (isOnline) {
-          console.error("Error fetching chat history:", err);
-        }
-      } finally {
-        setLoading(false);
+      } else {
+        isInitialLoadRef.current = false;
       }
     };
 
-    // Execute both functions
-    loadFromLocalStorage();
-    fetchChatHistory();
-  }, [isOnline]);
+    loadData();
+  }, [isOnline, setLoadingDebounced]);
 
+  // Optimize message sending to prevent re-renders
   const sendUserMessage = useCallback(
     async (message: string) => {
+      if (!message.trim()) return;
+
       try {
-        setLoading(true);
+        setLoadingDebounced(true);
 
         // Create a unique ID for this message
         const tempId = Date.now();
@@ -125,9 +187,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             timestamp: new Date().toISOString(),
           };
 
+          // Use a timeout to simulate network delay and prevent UI jumping
           setTimeout(() => {
             setMessages((prev) => [...prev, offlineResponse]);
-            setLoading(false);
+            setLoadingDebounced(false);
           }, 500);
 
           return;
@@ -164,10 +227,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
           console.error("Error sending message:", err);
         }
       } finally {
-        setLoading(false);
+        setLoadingDebounced(false);
       }
     },
-    [isOnline]
+    [isOnline, setLoadingDebounced]
   );
 
   const removeMessage = useCallback(
@@ -200,26 +263,36 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
+  // Memoize the context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      messages,
+      loading,
+      error,
+      sendUserMessage,
+      removeMessage,
+      clearError,
+      clearAllMessages,
+    }),
+    [
+      messages,
+      loading,
+      error,
+      sendUserMessage,
+      removeMessage,
+      clearError,
+      clearAllMessages,
+    ]
+  );
+
   return (
-    <ChatContext.Provider
-      value={{
-        messages,
-        loading,
-        error,
-        sendUserMessage,
-        removeMessage,
-        clearError,
-        clearAllMessages,
-      }}
-    >
-      {children}
-    </ChatContext.Provider>
+    <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>
   );
 }
 
 export function useChat() {
   const context = useContext(ChatContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useChat must be used within a ChatProvider");
   }
   return context;

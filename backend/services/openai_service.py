@@ -19,15 +19,17 @@ def get_openai_response(user_message):
     max_retry_delay = 16  # seconds
 
     try:
-        # Set OpenAI API key from environment variables if not already set
+        # Set and validate OpenAI API key
         if not openai.api_key:
             openai.api_key = os.getenv('OPENAI_API_KEY')
             if not openai.api_key and current_app:
                 openai.api_key = current_app.config.get('OPENAI_API_KEY')
         
         if not openai.api_key:
-            print("OpenAI API key is not set in environment variables or application config")
-            return "Service configuration error. Please check API key configuration."
+            error_msg = "OpenAI API key is not set in environment variables or application config"
+            print(error_msg)
+            from flask import abort
+            abort(500, description="Configuration error: OpenAI API key is not set")
 
         last_error = None
         for attempt in range(max_retries):
@@ -53,27 +55,36 @@ def get_openai_response(user_message):
                 )
 
                 if not response.choices:
-                    return "I apologize, but I couldn't generate a response. Please try again."
+                    return "I apologize, but I'm having trouble generating a response right now. Please try asking your question again."
 
                 return response.choices[0].message.content.strip()
 
             except (openai.error.RateLimitError, RateLimitError) as e:
                 last_error = e
                 print(f"Rate limit error on attempt {attempt + 1}/{max_retries}: {str(e)}")
+                if "exceeded your current quota" in str(e):
+                    from flask import abort
+                    abort(402, description="Service quota exceeded. Please try again later.")
                 if attempt < max_retries - 1:
                     wait_time = min(initial_retry_delay * (2 ** attempt), max_retry_delay)
                     print(f"Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                     continue
-                return "The service is experiencing high demand. Please try again in a minute."
+                from flask import abort
+                abort(429, description="Rate limit reached. Please try again in a few minutes.")
+
 
             except (openai.error.InvalidRequestError, InvalidRequestError) as e:
                 print(f"Invalid request to OpenAI API: {str(e)}")
-                return "I apologize, but I couldn't understand your request. Could you please rephrase it?"
+                from flask import abort
+                abort(400, description="Invalid request format. Please try rephrasing your question.")
+
 
             except openai.error.AuthenticationError as e:
                 print(f"Authentication error with OpenAI API: {str(e)}")
-                return "Service authentication error. Please contact support."
+                from flask import abort
+                abort(401, description="Authentication error. Please check API credentials.")
+
 
             except openai.error.APIConnectionError as e:
                 last_error = e
@@ -83,7 +94,7 @@ def get_openai_response(user_message):
                     print(f"Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                     continue
-                return "The service is temporarily unavailable. Please try again in a few moments."
+                return "I apologize, but I'm having trouble connecting to our services. Please try again in a moment."
 
             except (openai.error.APIError, APIError) as e:
                 last_error = e
@@ -93,7 +104,9 @@ def get_openai_response(user_message):
                     print(f"Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                     continue
-                return "The service is temporarily unavailable. Please try again in a few moments."
+                from flask import abort
+                abort(503, description="OpenAI API service error. Please try again later.")
+
 
             except Exception as e:
                 last_error = e
@@ -103,7 +116,7 @@ def get_openai_response(user_message):
                     print(f"Waiting {wait_time} seconds before retry...")
                     time.sleep(wait_time)
                     continue
-                return "I apologize, but I'm having trouble processing your request. Please try again."
+                return "I apologize, but something unexpected happened. Please try asking your question again."
 
     except Exception as e:
         print(f"Unexpected error: {str(e)}")
