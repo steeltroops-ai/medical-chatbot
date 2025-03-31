@@ -2,7 +2,53 @@
  * API service for communicating with the backend
  */
 
+// Configure the API URL, default to localhost if not specified
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+// Configure retry settings
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // in milliseconds
+
+/**
+ * Helper function to add retry logic to fetch requests
+ * @param url - The URL to fetch
+ * @param options - The fetch options
+ * @returns The response from the API
+ */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = MAX_RETRIES
+) {
+  try {
+    const response = await fetch(url, {
+      ...options,
+      // Add timeout
+      signal: AbortSignal.timeout(10000), // 10 second timeout
+    });
+
+    return response;
+  } catch (error) {
+    if (
+      retries > 0 &&
+      !(error instanceof DOMException && error.name === "AbortError")
+    ) {
+      console.log(`Retrying request to ${url}, ${retries} retries left`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Check if we're online
+ * @returns True if online, false otherwise
+ */
+function isOnline() {
+  return typeof navigator !== "undefined" && navigator.onLine;
+}
 
 /**
  * Send a message to the chatbot API
@@ -10,8 +56,14 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
  * @returns The response from the API
  */
 export async function sendMessage(message: string) {
+  if (!isOnline()) {
+    throw new Error(
+      "You are currently offline. Your message has been saved locally."
+    );
+  }
+
   try {
-    const response = await fetch(`${API_URL}/api/chat/message`, {
+    const response = await fetchWithRetry(`${API_URL}/api/chat/message`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -21,13 +73,31 @@ export async function sendMessage(message: string) {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      // Handle different error status codes
+      if (response.status === 503) {
+        throw new Error(
+          "The service is currently busy. Please try again in a moment."
+        );
+      }
+
+      // Try to parse error data
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      } catch (jsonError) {
+        // If we can't parse JSON, return a generic error
+        throw new Error(
+          `Server error (${response.status}): ${response.statusText}`
+        );
+      }
     }
 
     return await response.json();
   } catch (error) {
-    console.error("Error sending message:", error);
+    // Only log the error if it's not an offline error we already created
+    if (!(error instanceof Error && error.message.includes("offline"))) {
+      console.error("Error sending message:", error);
+    }
     throw error;
   }
 }
@@ -37,8 +107,13 @@ export async function sendMessage(message: string) {
  * @returns The chat history
  */
 export async function getChatHistory() {
+  // If offline, immediately return empty history
+  if (!isOnline()) {
+    return { history: [] };
+  }
+
   try {
-    const response = await fetch(`${API_URL}/api/chat/history`, {
+    const response = await fetchWithRetry(`${API_URL}/api/chat/history`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -51,14 +126,25 @@ export async function getChatHistory() {
       if (response.status === 401) {
         return { history: [] };
       }
-      
-      const errorData = await response.json();
-      throw new Error(errorData.error || `API error: ${response.status}`);
+
+      try {
+        const errorData = await response.json();
+        console.warn(
+          `Error fetching chat history: ${
+            errorData.error || response.statusText
+          }`
+        );
+      } catch (jsonError) {
+        console.warn(`Error fetching chat history: ${response.statusText}`);
+      }
+
+      // Return empty history on error to prevent app from crashing
+      return { history: [] };
     }
 
     return await response.json();
   } catch (error) {
-    console.error("Error fetching chat history:", error);
+    console.warn("Error fetching chat history:", error);
     // Return empty history on error to prevent app from crashing
     return { history: [] };
   }
@@ -70,23 +156,71 @@ export async function getChatHistory() {
  * @returns The response from the API
  */
 export async function deleteMessage(messageId: number) {
+  if (!isOnline()) {
+    throw new Error(
+      "You are currently offline. The message was removed locally."
+    );
+  }
+
   try {
-    const response = await fetch(`${API_URL}/api/chat/message/${messageId}`, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-    });
+    const response = await fetchWithRetry(
+      `${API_URL}/api/chat/message/${messageId}`,
+      {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      }
+    );
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `API error: ${response.status}`);
+      // For 404 (message not found), we can just proceed since it's already gone
+      if (response.status === 404) {
+        return { message: "Message already deleted" };
+      }
+
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `API error: ${response.status}`);
+      } catch (jsonError) {
+        throw new Error(
+          `Server error (${response.status}): ${response.statusText}`
+        );
+      }
     }
 
     return await response.json();
   } catch (error) {
-    console.error("Error deleting message:", error);
+    // Only log deletion errors if they're not offline errors
+    if (!(error instanceof Error && error.message.includes("offline"))) {
+      console.error("Error deleting message:", error);
+    }
     throw error;
+  }
+}
+
+/**
+ * Check the health of the API
+ * @returns True if the API is healthy, false otherwise
+ */
+export async function checkApiHealth() {
+  if (!isOnline()) {
+    return false;
+  }
+
+  try {
+    const response = await fetchWithRetry(`${API_URL}/api/health`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      // No credentials needed for health check
+    });
+
+    return response.ok;
+  } catch (error) {
+    console.warn("API health check failed:", error);
+    return false;
   }
 }
