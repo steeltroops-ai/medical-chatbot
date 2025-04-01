@@ -13,14 +13,19 @@ import {
 import { ChatMessage, ErrorResponse, MessageResponse } from "@/types/chat";
 import { getChatHistory, sendMessage, deleteMessage } from "@/services/api";
 
+// Enhanced error handling with categories
+export type ErrorType = "connection" | "server" | "input" | "general";
+
 interface ChatContextType {
   messages: ChatMessage[];
   loading: boolean;
   error: string | null;
+  errorType?: ErrorType;
   sendUserMessage: (message: string) => Promise<void>;
   removeMessage: (messageId: number) => Promise<void>;
   clearError: () => void;
   clearAllMessages: () => void;
+  isBackendAvailable: boolean;
 }
 
 // Storage key for localStorage
@@ -35,6 +40,7 @@ const defaultContextValue: ChatContextType = {
   removeMessage: async () => {},
   clearError: () => {},
   clearAllMessages: () => {},
+  isBackendAvailable: true,
 };
 
 const ChatContext = createContext<ChatContextType>(defaultContextValue);
@@ -43,14 +49,75 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // Use refs for values that don't need to trigger re-renders
   const isInitialLoadRef = useRef(true);
   const loadingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const backendCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Main state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<ErrorType | undefined>(undefined);
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true
   );
+  const [isBackendAvailable, setIsBackendAvailable] = useState<boolean>(true);
+
+  // Helper function to set formatted errors
+  const setFormattedError = useCallback((message: string, type: ErrorType) => {
+    setError(message);
+    setErrorType(type);
+  }, []);
+
+  // Import the API URL from api.ts
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+  // Check backend connectivity
+  const checkBackendConnectivity = useCallback(async () => {
+    if (!isOnline) {
+      setIsBackendAvailable(false);
+      return;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(`${API_URL}/api/health`, {
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      setIsBackendAvailable(response.ok);
+
+      if (!response.ok && !error) {
+        setFormattedError(
+          "Backend services are currently unavailable. Your messages are saved locally.",
+          "server"
+        );
+      }
+    } catch (err) {
+      setIsBackendAvailable(false);
+
+      if (!error) {
+        setFormattedError(
+          "Cannot connect to the medical assistant service. Working in offline mode.",
+          "connection"
+        );
+      }
+    }
+  }, [isOnline, error, setFormattedError]);
+
+  // Start periodic backend connectivity checks
+  useEffect(() => {
+    checkBackendConnectivity();
+
+    backendCheckTimerRef.current = setInterval(checkBackendConnectivity, 30000); // Check every 30 seconds
+
+    return () => {
+      if (backendCheckTimerRef.current) {
+        clearInterval(backendCheckTimerRef.current);
+      }
+    };
+  }, [isOnline, checkBackendConnectivity]);
 
   // Debounced loading state to prevent flashing loading indicators
   const setLoadingDebounced = useCallback((isLoading: boolean) => {
@@ -72,6 +139,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       if (loadingTimerRef.current) {
         clearTimeout(loadingTimerRef.current);
       }
+      if (backendCheckTimerRef.current) {
+        clearInterval(backendCheckTimerRef.current);
+      }
     };
   }, []);
 
@@ -92,21 +162,91 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [messages]);
 
-  // Monitor online status
+  // Global error interceptors to prevent system-level error badges
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
+    // Intercept console errors to prevent them from triggering system badges
+    const originalConsoleError = console.error;
+    console.error = (...args) => {
+      // If this is a network error to the backend, handle it gracefully
+      const errorString = args.join(" ");
+      if (
+        errorString.includes("localhost:5000") ||
+        errorString.includes("network error") ||
+        errorString.includes("failed to fetch")
+      ) {
+        setIsBackendAvailable(false);
+        if (!error) {
+          setFormattedError(
+            "Connection to medical service unavailable. Working in offline mode.",
+            "connection"
+          );
+        }
+        // Still log to console but prevent it from triggering system badges
+        args[0] = "[Intercepted] " + args[0];
+      }
+      originalConsoleError.apply(console, args);
+    };
 
+    // Intercept unhandled promise rejections
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      event.preventDefault(); // Prevent default error handling
+      if (!error) {
+        setFormattedError(
+          "An operation couldn't complete. Your data is still safe.",
+          "general"
+        );
+      }
+      console.log("[Intercepted] Unhandled rejection:", event.reason);
+    };
+
+    // Intercept JS errors
+    const handleError = (event: ErrorEvent) => {
+      event.preventDefault(); // Prevent default error handling
+      if (!error && !event.message.includes("ResizeObserver")) {
+        setFormattedError("Something went wrong. Please try again.", "general");
+      }
+      console.log("[Intercepted] Error:", event.message);
+    };
+
+    // Monitor online status
+    const handleOnline = () => {
+      setIsOnline(true);
+      setFormattedError(
+        "You're back online! Your messages will be synced to the server.",
+        "connection"
+      );
+      setTimeout(clearError, 5000);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setIsBackendAvailable(false);
+      setFormattedError(
+        "You're offline. Messages are saved locally and will sync when you're back online.",
+        "connection"
+      );
+    };
+
+    // Add all event listeners
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    window.addEventListener("error", handleError);
 
     return () => {
+      // Clean up all listeners and restore console
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(
+        "unhandledrejection",
+        handleUnhandledRejection
+      );
+      window.removeEventListener("error", handleError);
+      console.error = originalConsoleError;
     };
-  }, []);
+  }, [error, setFormattedError]);
 
   // Load messages from localStorage and fetch from API only once at startup
   useEffect(() => {
@@ -122,10 +262,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       } catch (err) {
         console.error("Error loading messages from localStorage:", err);
+        setFormattedError(
+          "Could not load your saved messages. Starting a fresh conversation.",
+          "general"
+        );
       }
 
       // Then try to fetch from API if online
-      if (isOnline) {
+      if (isOnline && isBackendAvailable) {
         try {
           setLoadingDebounced(true);
           const data = await getChatHistory();
@@ -142,9 +286,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             });
           }
         } catch (err) {
-          if (isOnline) {
-            console.error("Error fetching chat history:", err);
-          }
+          console.error("Error fetching chat history:", err);
+          setFormattedError(
+            "Could not retrieve your conversation history from the server. Using locally saved messages.",
+            "server"
+          );
         } finally {
           setLoadingDebounced(false);
           isInitialLoadRef.current = false;
@@ -155,7 +301,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     };
 
     loadData();
-  }, [isOnline, setLoadingDebounced]);
+  }, [isOnline, isBackendAvailable, setLoadingDebounced, setFormattedError]);
 
   // Optimize message sending to prevent re-renders
   const sendUserMessage = useCallback(
@@ -177,12 +323,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // Add user message to the chat immediately
         setMessages((prev) => [...prev, userMessage]);
 
-        // If offline, simulate a response
-        if (!isOnline) {
+        // If offline or backend unavailable, simulate a response
+        if (!isOnline || !isBackendAvailable) {
           const offlineResponse: ChatMessage = {
             id: tempId + 1,
-            content:
-              "I'm currently offline. Your message has been saved and will be processed when you're back online.",
+            content: !isOnline
+              ? "You're currently offline. Your message has been saved and will be processed when you're back online."
+              : "The medical assistant service is currently unavailable. Your message has been saved for later processing.",
             is_bot: true,
             timestamp: new Date().toISOString(),
           };
@@ -210,15 +357,42 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
           setMessages((prev) => [...prev, botMessage]);
         } catch (err) {
-          const errorMessage =
-            err instanceof Error ? err.message : "An unknown error occurred";
-          setError(`Failed to get response: ${errorMessage}`);
+          // More user-friendly error messages based on error type
+          if (err instanceof Error) {
+            if (
+              err.message.includes("timeout") ||
+              err.message.includes("network")
+            ) {
+              setFormattedError(
+                "Connection issue with the medical service. Your message is saved locally.",
+                "connection"
+              );
+            } else if (
+              err.message.includes("500") ||
+              err.message.includes("server")
+            ) {
+              setFormattedError(
+                "The medical service is experiencing issues. Please try again later.",
+                "server"
+              );
+            } else {
+              setFormattedError(
+                "Could not process your request at this time.",
+                "general"
+              );
+            }
+          } else {
+            setFormattedError(
+              "An unexpected error occurred. Please try again.",
+              "general"
+            );
+          }
 
-          // Create an error message from the bot
+          // Create an error message from the bot with more detailed info
           const errorBotMessage: ChatMessage = {
             id: tempId + 1,
             content:
-              "Sorry, I couldn't process your request. Please try again later.",
+              "I'm sorry, I couldn't process your request right now. Your message has been saved, and I'll respond when the service is available again.",
             is_bot: true,
             timestamp: new Date().toISOString(),
           };
@@ -230,7 +404,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setLoadingDebounced(false);
       }
     },
-    [isOnline, setLoadingDebounced]
+    [isOnline, isBackendAvailable, setLoadingDebounced, setFormattedError]
   );
 
   const removeMessage = useCallback(
@@ -240,23 +414,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
 
         // Then try to sync with server if online
-        if (isOnline) {
+        if (isOnline && isBackendAvailable) {
           await deleteMessage(messageId).catch((err) => {
             console.error("Error deleting message from server:", err);
             // We don't revert the UI change even if the server call fails
           });
         }
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "An unknown error occurred";
-        setError(`Failed to delete message: ${errorMessage}`);
+        setFormattedError(
+          "Couldn't delete the message from the server, but it's removed from your current view.",
+          "general"
+        );
         console.error("Error deleting message:", err);
       }
     },
-    [isOnline]
+    [isOnline, isBackendAvailable, setFormattedError]
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => {
+    setError(null);
+    setErrorType(undefined);
+  }, []);
 
   const clearAllMessages = useCallback(() => {
     setMessages([]);
@@ -269,19 +447,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       messages,
       loading,
       error,
+      errorType,
       sendUserMessage,
       removeMessage,
       clearError,
       clearAllMessages,
+      isBackendAvailable,
     }),
     [
       messages,
       loading,
       error,
+      errorType,
       sendUserMessage,
       removeMessage,
       clearError,
       clearAllMessages,
+      isBackendAvailable,
     ]
   );
 

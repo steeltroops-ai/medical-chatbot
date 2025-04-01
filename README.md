@@ -1,78 +1,125 @@
-# Chat Application with OpenAI Integration
+# Medical Chat Assistant
 
-This is a full-stack chat application with OpenAI integration, featuring a React frontend and Flask backend.
+A full-stack application for medical chat assistance, featuring a React frontend and Flask backend with OpenAI integration.
 
 ## Project Structure
 
-- `frontend/`: Next.js/React frontend application
-- `backend/`: Flask backend API with OpenAI integration
-- `.env`: Environment variables for configuration
+The project consists of two main parts:
+
+- **Backend**: Flask API with OpenAI integration and user authentication
+- **Frontend**: React/Next.js application with a responsive chat interface
 
 ## Setup Instructions
 
 ### Prerequisites
 
-- Node.js 16+ for the frontend
 - Python 3.8+ for the backend
+- Node.js 16+ for the frontend
 - OpenAI API key
 
 ### Backend Setup
 
-1. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+1. Create and activate a virtual environment:
 
-2. Install backend dependencies:
-   ```bash
-   pip install -r backend/requirements.txt
-   ```
+```bash
+# Create virtual environment
+python -m venv venv
 
-3. Configure environment variables by editing the `.env` file:
-   ```
-   OPENAI_API_KEY=your-openai-api-key-here
-   ```
+# Activate virtual environment (Windows)
+venv\Scripts\activate
+
+# Activate virtual environment (macOS/Linux)
+source venv/bin/activate
+```
+
+2. Install dependencies:
+
+```bash
+pip install -r backend/requirements.txt
+```
+
+3. Set up environment variables:
+
+Copy the `.env.example` file to `.env` and fill in your OpenAI API key:
+
+```
+# Flask configuration
+FLASK_ENV=development
+SECRET_KEY=your_secret_key_here
+
+# Database configuration
+DATABASE_URL=sqlite:///medical_chatbot.db
+
+# OpenAI configuration
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-3.5-turbo
+```
 
 4. Run the backend server:
-   ```bash
-   python run.py
-   ```
 
-   The server will start at http://localhost:5000
+```bash
+python run.py
+```
+
+The backend server will start at http://localhost:5000
 
 ### Frontend Setup
 
-1. Install frontend dependencies:
-   ```bash
-   cd frontend
-   npm install
-   ```
+1. Navigate to the frontend directory:
 
-2. Run the frontend development server:
-   ```bash
-   npm run dev
-   ```
+```bash
+cd frontend
+```
 
-   The application will be available at http://localhost:3000
+2. Install dependencies:
 
-## Features
+```bash
+npm install
+```
 
-- Real-time chat interface
-- Integration with OpenAI's GPT-3.5 model
-- Message history (requires authentication)
-- Responsive design
+3. Run the development server:
+
+```bash
+npm run dev
+```
+
+The frontend will be available at http://localhost:3000
 
 ## API Endpoints
 
-- `/chat/message` (POST): Send a message to the AI assistant
-- `/api/chat/history` (GET): Get chat history (requires authentication)
-- `/api/chat/message/:id` (DELETE): Delete a message (requires authentication)
-- `/api/auth/register` (POST): Register a new user
-- `/api/auth/login` (POST): Log in a user
-- `/api/auth/logout` (POST): Log out the current user
-- `/api/auth/user` (GET): Get current user information
+### Authentication
 
-## Authentication
+- `POST /api/auth/register` - Register a new user
+- `POST /api/auth/login` - Log in a user
+- `POST /api/auth/logout` - Log out a user
+- `GET /api/auth/user` - Get current user information
 
-The application supports user authentication, but it's not required for basic chat functionality. Authenticated users can access chat history.
+### Chat
+
+- `POST /api/chat/message` - Send a message to the chatbot
+- `GET /api/chat/history` - Get chat history for the current user
+- `DELETE /api/chat/message/:id` - Delete a message from chat history
+
+### Health Check
+
+- `GET /api/health` - Health check endpoint
+
+## Features
+
+- Responsive chat interface
+- OpenAI integration with GPT-3.5/4
+- User authentication and session management
+- Persistent chat history
+- Offline detection and handling
+- Error handling and retry logic
+
+## Tech Stack
+
+- **Backend**: Flask, SQLAlchemy, Flask-Login
+- **Frontend**: React, Next.js, TypeScript
+- **API**: OpenAI ChatCompletion
+- **Styling**: Tailwind CSS
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

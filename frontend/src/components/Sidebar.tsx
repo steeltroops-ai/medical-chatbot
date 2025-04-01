@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useChat } from "@/context/ChatContext";
-import Image from "next/image";
+import ThemeToggle from "./ThemeToggle";
 
 interface SidebarProps {
   onNewChat: () => void;
@@ -14,7 +14,8 @@ export default function Sidebar({
   selectedChatId,
   onSelectChat,
 }: SidebarProps) {
-  const { messages } = useChat();
+  const { messages, isBackendAvailable, error, errorType, clearError } =
+    useChat();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -37,6 +38,50 @@ export default function Sidebar({
     },
     {}
   );
+
+  // State for online status (client-side only)
+  const [isOnline, setIsOnline] = useState(true);
+
+  // Update online status on client side only
+  useEffect(() => {
+    setIsOnline(navigator.onLine);
+
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Function to get status text and color
+  const getConnectionStatus = () => {
+    if (!isOnline) {
+      return {
+        color: "bg-red-500",
+        text: "Offline",
+        textColor: "text-red-500 dark:text-red-400",
+      };
+    } else if (!isBackendAvailable) {
+      return {
+        color: "bg-amber-500",
+        text: "Online - Backend Unavailable",
+        textColor: "text-amber-500 dark:text-amber-400",
+      };
+    } else {
+      return {
+        color: "bg-green-500",
+        text: "Connected",
+        textColor: "text-green-500 dark:text-green-400",
+      };
+    }
+  };
+
+  const connectionStatus = getConnectionStatus();
 
   return (
     <div
@@ -87,6 +132,33 @@ export default function Sidebar({
           </svg>
           New Conversation
         </button>
+      </div>
+
+      {/* Connection status banner */}
+      <div className="px-4" suppressHydrationWarning>
+        {typeof window !== "undefined" &&
+          (!isOnline || !isBackendAvailable) && (
+            <div
+              className={`
+            mb-3 text-xs px-3 py-2 rounded-lg
+            ${
+              !isOnline
+                ? "bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
+                : "bg-amber-100 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800"
+            }
+            animate-fade-in flex items-center
+          `}
+            >
+              <div
+                className={`w-2 h-2 rounded-full mr-2 ${connectionStatus.color}`}
+              ></div>
+              <span className={connectionStatus.textColor}>
+                {!isOnline
+                  ? "Offline - Messages saved locally"
+                  : "Backend unavailable - Using local storage"}
+              </span>
+            </div>
+          )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3">
@@ -178,14 +250,41 @@ export default function Sidebar({
       </div>
 
       <div className="p-4 border-t border-border-color bg-sidebar-bg">
+        {/* Settings section */}
         <div className="flex flex-col space-y-2">
+          {/* Settings dropdown toggle */}
           <button
-            className="w-full text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-500 p-2.5 rounded-lg hover:bg-sidebar-hover text-sm flex items-center transition-colors"
+            className="w-full text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-500 p-2.5 rounded-lg hover:bg-sidebar-hover text-sm flex items-center justify-between transition-colors"
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
           >
+            <span className="flex items-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 mr-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+              <span>Settings</span>
+            </span>
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-3"
+              className={`h-4 w-4 transition-transform duration-200 ${
+                isSettingsOpen ? "rotate-180" : ""
+              }`}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -194,18 +293,24 @@ export default function Sidebar({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                d="M19 9l-7 7-7-7"
               />
             </svg>
-            <span>Settings</span>
           </button>
 
+          {/* Settings content - expanded when isSettingsOpen is true */}
+          {isSettingsOpen && (
+            <div className="pl-10 pr-3 pb-2 pt-1 animate-fade-in">
+              <div className="mb-3">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Appearance
+                </p>
+                <ThemeToggle />
+              </div>
+            </div>
+          )}
+
+          {/* Sign out button */}
           <button className="w-full text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-500 p-2.5 rounded-lg hover:bg-sidebar-hover text-sm flex items-center transition-colors">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -225,10 +330,44 @@ export default function Sidebar({
           </button>
         </div>
 
-        <div className="mt-4 pt-4 border-t border-border-color">
-          <div className="flex items-center text-xs text-gray-500">
-            <div className="w-2 h-2 rounded-full bg-teal-500 mr-2 pulse-animation"></div>
-            Medical Assistant v1.0
+        {/* Version indicator with custom error badge overlay */}
+        <div className="mt-4 pt-4 border-t border-border-color relative">
+          {/* Custom badge overlay - covers the system badge */}
+          {error && (
+            <div
+              className="absolute -bottom-12 -left-1 z-50 flex items-center status-badge offline animate-fade-in cursor-pointer"
+              onClick={clearError}
+              title="Click to dismiss"
+            >
+              <div className="h-5 w-5 bg-red-500 text-white flex items-center justify-center rounded-full mr-1 text-xs font-bold">
+                !
+              </div>
+              <span className="text-xs">
+                {errorType === "connection" ? "Connection Error" : "API Error"}
+                <span className="ml-1 opacity-70">✕</span>
+              </span>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center text-gray-500">
+              <div className="w-2 h-2 rounded-full bg-teal-500 mr-2 animate-pulse"></div>
+              <span>Medical Assistant v1.0</span>
+            </div>
+
+            {/* Improved connection status indicator */}
+            <div className="flex items-center text-xs" suppressHydrationWarning>
+              {typeof window !== "undefined" && (
+                <>
+                  <div
+                    className={`w-2 h-2 rounded-full mr-1 ${connectionStatus.color}`}
+                  ></div>
+                  <span className={connectionStatus.textColor}>
+                    {connectionStatus.text}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

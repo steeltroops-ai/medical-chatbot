@@ -10,12 +10,20 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // in milliseconds
 
 /**
+ * Check if we're online
+ * @returns True if online, false otherwise
+ */
+export function isOnline() {
+  return typeof navigator !== "undefined" && navigator.onLine;
+}
+
+/**
  * Helper function to add retry logic to fetch requests
  * @param url - The URL to fetch
  * @param options - The fetch options
  * @returns The response from the API
  */
-async function fetchWithRetry(
+export async function fetchWithRetry(
   url: string,
   options: RequestInit = {},
   retries = MAX_RETRIES
@@ -40,14 +48,6 @@ async function fetchWithRetry(
 
     throw error;
   }
-}
-
-/**
- * Check if we're online
- * @returns True if online, false otherwise
- */
-function isOnline() {
-  return typeof navigator !== "undefined" && navigator.onLine;
 }
 
 /**
@@ -83,12 +83,21 @@ export async function sendMessage(message: string) {
       // Try to parse error data
       try {
         const errorData = await response.json();
-        throw new Error(errorData.error || `API error: ${response.status}`);
+        const errorMessage = errorData.error || `API error: ${response.status}`;
+
+        // Create a custom error object with additional properties
+        const customError = new Error(errorMessage);
+        // Add status code to the error for better handling
+        (customError as any).code = response.status;
+        (customError as any).statusText = response.statusText;
+        throw customError;
       } catch (jsonError) {
-        // If we can't parse JSON, return a generic error
-        throw new Error(
+        // If we can't parse JSON, return a generic error with status code
+        const genericError = new Error(
           `Server error (${response.status}): ${response.statusText}`
         );
+        (genericError as any).code = response.status;
+        throw genericError;
       }
     }
 
@@ -204,23 +213,30 @@ export async function deleteMessage(messageId: number) {
  * Check the health of the API
  * @returns True if the API is healthy, false otherwise
  */
-export async function checkApiHealth() {
+export async function checkApiHealth(): Promise<boolean> {
   if (!isOnline()) {
     return false;
   }
 
   try {
-    const response = await fetchWithRetry(`${API_URL}/api/health`, {
-      method: "GET",
+    const response = await fetch(`${API_URL}/api/health`, {
+      method: 'GET',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
-      // No credentials needed for health check
+      // Add timeout
+      signal: AbortSignal.timeout(5000)
     });
 
-    return response.ok;
+    if (!response.ok) {
+      console.warn(`Health check failed with status: ${response.status}`);
+      return false;
+    }
+
+    const data = await response.json();
+    return data.status === 'ok';
   } catch (error) {
-    console.warn("API health check failed:", error);
+    console.warn('Health check failed:', error);
     return false;
   }
 }

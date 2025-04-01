@@ -1,8 +1,8 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_login import login_required, current_user
-from models import ChatMessage
-from app import db
-from services.openai_service import get_openai_response
+from ..models import ChatMessage
+from .. import db
+from ..services.openai_service import get_openai_response
 
 chat_bp = Blueprint('chat', __name__)
 
@@ -10,11 +10,9 @@ chat_bp = Blueprint('chat', __name__)
 def send_message():
     """
     Process a chat message from the user and get a response from OpenAI.
-    This endpoint now works with or without authentication.
     """
     data = request.get_json()
     
-    # Validate input data
     if not data or not data.get('message'):
         return jsonify({'error': 'Message is required'}), 400
     
@@ -77,14 +75,16 @@ def send_message():
                     }), 200
                 except Exception as e:
                     db.session.rollback()
+                    current_app.logger.error(f"Database error when saving messages: {str(e)}")
                     return jsonify({
                         'error': 'Failed to save messages to database',
                         'message': bot_response,
                         'message_id': 0
-                    }), 500
+                    }), 200  # Still return 200 with the response
+                    
             except Exception as db_error:
                 db.session.rollback()
-                print(f"Database error: {str(db_error)}")
+                current_app.logger.error(f"Database error: {str(db_error)}")
                 # Still return the response even if saving to DB failed
                 return jsonify({
                     'message': bot_response,
@@ -98,38 +98,48 @@ def send_message():
             }), 200
             
     except Exception as e:
+        current_app.logger.error(f"Error in send_message: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @chat_bp.route('/history', methods=['GET'])
 @login_required
 def get_chat_history():
     """Get chat history for the authenticated user"""
-    # Get chat history for current user
-    messages = ChatMessage.query.filter_by(user_id=current_user.id).order_by(ChatMessage.timestamp).all()
-    
-    # Format messages
-    history = [{
-        'id': message.id,
-        'content': message.content,
-        'is_bot': message.is_bot,
-        'timestamp': message.timestamp.isoformat()
-    } for message in messages]
-    
-    return jsonify({'history': history}), 200
+    try:
+        # Get chat history for current user
+        messages = ChatMessage.query.filter_by(user_id=current_user.id).order_by(ChatMessage.timestamp).all()
+        
+        # Format messages
+        history = [{
+            'id': message.id,
+            'content': message.content,
+            'is_bot': message.is_bot,
+            'timestamp': message.timestamp.isoformat()
+        } for message in messages]
+        
+        return jsonify({'history': history}), 200
+    except Exception as e:
+        current_app.logger.error(f"Error in get_chat_history: {str(e)}")
+        return jsonify({'error': str(e), 'history': []}), 500
 
 @chat_bp.route('/message/<int:message_id>', methods=['DELETE'])
 @login_required
 def delete_message(message_id):
     """Delete a specific message from the chat history"""
-    # Find message
-    message = ChatMessage.query.filter_by(id=message_id, user_id=current_user.id).first()
-    
-    # Check if message exists
-    if not message:
-        return jsonify({'error': 'Message not found'}), 404
-    
-    # Delete message
-    db.session.delete(message)
-    db.session.commit()
-    
-    return jsonify({'message': 'Message deleted successfully'}), 200
+    try:
+        # Find message
+        message = ChatMessage.query.filter_by(id=message_id, user_id=current_user.id).first()
+        
+        # Check if message exists
+        if not message:
+            return jsonify({'error': 'Message not found'}), 404
+        
+        # Delete message
+        db.session.delete(message)
+        db.session.commit()
+        
+        return jsonify({'message': 'Message deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error in delete_message: {str(e)}")
+        return jsonify({'error': str(e)}), 500

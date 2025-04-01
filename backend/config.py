@@ -6,13 +6,13 @@ load_dotenv()
 
 class Config:
     # Flask configuration
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key')
-    DEBUG = bool(int(os.environ.get('FLASK_DEBUG', 0)))
+    SECRET_KEY = os.getenv('SECRET_KEY', 'dev')
+    DEBUG = os.getenv('FLASK_ENV') == 'development'
     
     # Database configuration
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///database.db')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///medical_chatbot.db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # OpenAI configuration
-    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
-    OPENAI_MODEL = os.environ.get('OPENAI_MODEL', 'gpt-3.5-turbo')
+    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+    OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
