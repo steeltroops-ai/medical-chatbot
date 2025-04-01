@@ -1,8 +1,6 @@
-from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-
-db = SQLAlchemy()
+from .. import db
 
 class User(UserMixin, db.Model):
     """User model for authentication"""
@@ -18,7 +16,3 @@ class User(UserMixin, db.Model):
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
-
-from .chat_message import ChatMessage
-
-__all__ = ['db', 'User', 'ChatMessage']

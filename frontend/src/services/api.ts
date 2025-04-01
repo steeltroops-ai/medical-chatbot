@@ -2,12 +2,31 @@
  * API service for communicating with the backend
  */
 
-// Configure the API URL, default to localhost if not specified
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = "http://localhost:3001"; // adjust this to match your backend URL
+
+export const checkBackendConnection = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`);
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+};
+
+// Update API URL to match Flask backend
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 // Configure retry settings
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // in milliseconds
+
+// Update fetch options to include credentials
+const defaultFetchOptions: RequestInit = {
+  credentials: "include",
+  headers: {
+    "Content-Type": "application/json",
+  },
+};
 
 /**
  * Check if we're online
@@ -28,9 +47,18 @@ export async function fetchWithRetry(
   options: RequestInit = {},
   retries = MAX_RETRIES
 ) {
+  const fetchOptions = {
+    ...defaultFetchOptions,
+    ...options,
+    headers: {
+      ...defaultFetchOptions.headers,
+      ...options.headers,
+    },
+  };
+
   try {
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       // Add timeout
       signal: AbortSignal.timeout(10000), // 10 second timeout
     });
@@ -220,12 +248,12 @@ export async function checkApiHealth(): Promise<boolean> {
 
   try {
     const response = await fetch(`${API_URL}/api/health`, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       // Add timeout
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(5000),
     });
 
     if (!response.ok) {
@@ -234,9 +262,9 @@ export async function checkApiHealth(): Promise<boolean> {
     }
 
     const data = await response.json();
-    return data.status === 'ok';
+    return data.status === "ok";
   } catch (error) {
-    console.warn('Health check failed:', error);
+    console.warn("Health check failed:", error);
     return false;
   }
 }
