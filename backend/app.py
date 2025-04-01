@@ -47,6 +47,14 @@ def create_app():
     
     # Register error handlers
     register_error_handlers(app)
+
+    # Add root route
+    @app.route('/')
+    def root():
+        return jsonify({
+            "status": "ok",
+            "message": "Medical Chatbot API is running"
+        })
     
     # Create database tables
     with app.app_context():

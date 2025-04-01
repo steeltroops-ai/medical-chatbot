@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 from flask_login import LoginManager
 from flask_cors import CORS
 from .models import db, User
@@ -31,12 +31,27 @@ def create_app(config_class=Config):
     # Import and register blueprints
     from .routes.auth import auth_bp
     from .routes.chat import chat_bp
+    from .routes.health import health_bp
     
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
+    app.register_blueprint(health_bp, url_prefix='/api/health')
     
     # Create database tables
     with app.app_context():
         db.create_all()
+    
+    # Add root route handler
+    @app.route('/')
+    def root():
+        return jsonify({
+            'message': 'Welcome to Medical Chatbot API',
+            'version': '1.0',
+            'endpoints': {
+                'auth': '/api/auth',
+                'chat': '/api/chat',
+                'health': '/api/health'
+            }
+        })
     
     return app
