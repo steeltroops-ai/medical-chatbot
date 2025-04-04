@@ -11,7 +11,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [theme, setTheme] = useState<Theme>("system");
   const [mounted, setMounted] = useState(false);
 
@@ -32,18 +32,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     // Apply theme
     const root = document.documentElement;
-    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+      .matches
       ? "dark"
       : "light";
-    
+
     const applyTheme = theme === "system" ? systemTheme : theme;
-    
+
     if (applyTheme === "dark") {
       root.classList.add("dark");
     } else {
       root.classList.remove("dark");
     }
-    
+
     // Update meta theme-color
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
@@ -64,7 +65,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       {children}
     </ThemeContext.Provider>
   );
-}
+};
 
 export function useTheme() {
   const context = useContext(ThemeContext);

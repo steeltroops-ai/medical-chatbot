@@ -50,41 +50,31 @@ def send_message():
         # Process authenticated users
         if hasattr(current_user, 'is_authenticated') and current_user.is_authenticated:
             try:
-                try:
-                    # Save user message to database
-                    user_message = ChatMessage(
-                        user_id=current_user.id,
-                        content=data['message'],
-                        is_bot=False
-                    )
-                    db.session.add(user_message)
-                    db.session.flush()  # Get user message ID
+                # Save user message to database
+                user_message = ChatMessage(
+                    user_id=current_user.id,
+                    content=data['message'],
+                    is_bot=False
+                )
+                db.session.add(user_message)
+                db.session.flush()  # Get user message ID
 
-                    # Save bot message to database
-                    bot_message = ChatMessage(
-                        user_id=current_user.id,
-                        content=bot_response,
-                        is_bot=True
-                    )
-                    db.session.add(bot_message)
-                    db.session.commit()  # Commit both messages
+                # Save bot message to database
+                bot_message = ChatMessage(
+                    user_id=current_user.id,
+                    content=bot_response,
+                    is_bot=True
+                )
+                db.session.add(bot_message)
+                db.session.commit()  # Commit both messages
 
-                    return jsonify({
-                        'message': bot_response,
-                        'message_id': bot_message.id
-                    }), 200
-                except Exception as e:
-                    db.session.rollback()
-                    current_app.logger.error(f"Database error when saving messages: {str(e)}")
-                    return jsonify({
-                        'error': 'Failed to save messages to database',
-                        'message': bot_response,
-                        'message_id': 0
-                    }), 200  # Still return 200 with the response
-                    
-            except Exception as db_error:
+                return jsonify({
+                    'message': bot_response,
+                    'message_id': bot_message.id
+                }), 200
+            except Exception as e:
                 db.session.rollback()
-                current_app.logger.error(f"Database error: {str(db_error)}")
+                current_app.logger.error(f"Database error when saving messages: {str(e)}")
                 # Still return the response even if saving to DB failed
                 return jsonify({
                     'message': bot_response,
@@ -110,12 +100,7 @@ def get_chat_history():
         messages = ChatMessage.query.filter_by(user_id=current_user.id).order_by(ChatMessage.timestamp).all()
         
         # Format messages
-        history = [{
-            'id': message.id,
-            'content': message.content,
-            'is_bot': message.is_bot,
-            'timestamp': message.timestamp.isoformat()
-        } for message in messages]
+        history = [message.to_dict() for message in messages]
         
         return jsonify({'history': history}), 200
     except Exception as e:
